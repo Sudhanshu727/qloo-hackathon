@@ -1,4 +1,4 @@
-# Qloo Fashion AI - FastAPI & CLI Application
+# Qloo Fashion AI
 
 A comprehensive fashion recommendation system that combines the power of Qloo API, Qdrant vector search, and Gemini AI to provide intelligent fashion insights and recommendations.
 
@@ -227,10 +227,5 @@ CMD ["python", "app.py"]
 
 This project was created for the Qloo LLM Hackathon.
 
-## 👥 Contributing
-
-Built with ❤️ by GitHub Copilot for the Qloo Fashion AI Hackathon 🎉
-
----
-
-**Happy Fashion Recommendations! 👗✨**
+## Authors
+Soumya Sourav Das | Devyanshi Bansal | Mansi Gahlawat | Sudhanshu Shekhar
