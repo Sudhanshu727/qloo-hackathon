@@ -232,7 +232,7 @@ async def get_cultural_fusion_recommendations(request: CulturalFusionRequest):
         Keep it concise but descriptive.
         """
         
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         fusion_description = model.generate_content(culture_prompt).text
         
         # Use the generated description to find relevant fashion items
@@ -334,7 +334,7 @@ def get_anti_recommendations(current_item_description: str, style_preferences: O
         """
         
         if client_manager.is_gemini_configured():
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-1.5-flash') 
             response = model.generate_content(prompt)
             opposite_query = response.text.strip()
         else:
@@ -529,7 +529,7 @@ def get_choice_approval(item_description: str, user_style: Optional[str] = None)
         Return only valid JSON.
         """
         
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         
         try:

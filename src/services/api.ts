@@ -281,7 +281,8 @@ export const apiService = {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ user_id: userId }),
+        // Change this line
+        body: JSON.stringify({ preferences: userId }), // Use 'preferences' instead of 'user_id'
       });
       if (!response.ok) {
         const error = await response
@@ -300,6 +301,7 @@ export const apiService = {
   },
 
   // Corrected function for ChoiceApproval.tsx
+  // In apiService object in api.ts
   async getChoiceApproval({
     item_description,
     user_style,
@@ -308,7 +310,8 @@ export const apiService = {
     user_style?: string;
   }) {
     try {
-      const response = await fetch(`${API_BASE_URL}/get-approval`, {
+      // Corrected the URL path to /choice-approval
+      const response = await fetch(`${API_BASE_URL}/choice-approval`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -347,11 +350,9 @@ export const apiService = {
         body: JSON.stringify({ user_id, cultures }),
       });
       if (!response.ok) {
-        const error = await response
-          .json()
-          .catch(() => ({
-            message: "Failed to get cultural fusion recommendations",
-          }));
+        const error = await response.json().catch(() => ({
+          message: "Failed to get cultural fusion recommendations",
+        }));
         throw new ApiError(
           error.message || "Failed to get cultural fusion recommendations",
           response.status.toString()
@@ -368,22 +369,22 @@ export const apiService = {
   },
 
   // Added function for UniqueStyle.tsx
+  // In the apiService object
+
   async getAntiRecommendations({
-    user_id,
-    current_item_id,
+    current_item_description,
+    style_preferences,
   }: {
-    user_id: string;
-    current_item_id: string;
+    current_item_description: string;
+    style_preferences?: string;
   }) {
     try {
-      // Note: The '/anti-recommendations' endpoint is an assumption. 
-      // Please verify this with your backend API.
       const response = await fetch(`${API_BASE_URL}/anti-recommendations`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ user_id, current_item_id }),
+        body: JSON.stringify({ current_item_description, style_preferences }),
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({
