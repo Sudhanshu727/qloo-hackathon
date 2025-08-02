@@ -13,13 +13,13 @@ from qdrant_client import QdrantClient
 import google.generativeai as genai
 import random
 
-GEMINI_API_KEY = ""
-QLOO_API_KEY = ""
-QLOO_BASE_URL = ""
-QDRANT_URL = ""
-QDRANT_API_KEY = ""
+GEMINI_API_KEY = "AIzaSyCmgKxKEWO4uEI5tlQ6XdlNGtjj6SWFUjI"
+QLOO_API_KEY = "P47XJ-8yWaXrcxRkDu7XJPCeLXvNhGLGsMKcYLWTXkA"
+QLOO_BASE_URL = "https://hackathon.api.qloo.com/v2"
+QDRANT_URL = "https://c977d41b-092f-4746-8055-e0c1974ed673.europe-west3-0.gcp.cloud.qdrant.io"
+QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.-IpipKy3ymQr1qZIAvAzNZ87K1e0Qxd8B2MNKTWY07w"
 
-QDRANT_COLLECTION_NAME = ""
+QDRANT_COLLECTION_NAME = "fashion_clip_recommender"
 GEMINI_EMBEDDING_MODEL = "models/text-embedding-004"
 EMBEDDING_DIMENSION = 768
 
@@ -90,6 +90,22 @@ class ClientManager:
     
     def is_gemini_configured(self):
         return self.gemini_configured
+        
+    def get_embedding(self, text: str) -> List[float]:
+        if not self.is_gemini_configured():
+            raise HTTPException(status_code=500, detail="Gemini client not configured")
+            
+        result = genai.embed_content(
+            model=GEMINI_EMBEDDING_MODEL,
+            content=text,
+            task_type="RETRIEVAL_QUERY"
+        )
+        embedding = result['embedding']
+        
+        if len(embedding) > 512:
+            embedding = embedding[:512]
+            
+        return embedding
 
 client_manager = ClientManager()
 
@@ -198,6 +214,49 @@ def qdrant_payload_to_fashion_item(point) -> FashionItem:
         remarks=payload.get('remarks')
     )
 
+class CulturalFusionRequest(BaseModel):
+    user_id: str
+    cultures: List[str]
+
+@app.post("/cultural-fusion")
+async def get_cultural_fusion_recommendations(request: CulturalFusionRequest):
+    try:
+        # Generate a cultural fusion query using Gemini
+        culture_prompt = f"""
+        Create a fashion blend description combining these cultural styles: {', '.join(request.cultures)}.
+        Focus on how these cultures uniquely mix in terms of:
+        - Colors
+        - Patterns
+        - Silhouettes
+        - Materials
+        Keep it concise but descriptive.
+        """
+        
+        model = genai.GenerativeModel('gemini-pro')
+        fusion_description = model.generate_content(culture_prompt).text
+        
+        # Use the generated description to find relevant fashion items
+        query_vector = get_gemini_embedding(fusion_description)
+        search_results = client_manager.qdrant_client.search(
+            collection_name=QDRANT_COLLECTION_NAME,
+            query_vector=query_vector,
+            limit=9
+        )
+        
+        # Convert the results to fashion items
+        items = [qdrant_payload_to_fashion_item(point) for point in search_results]
+        
+        # Generate a cultural blend name
+        blend_name = ' × '.join(culture.capitalize() for culture in request.cultures)
+        
+        return {
+            "items": items,
+            "cultural_blend": blend_name,
+            "description": fusion_description
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 def get_gemini_embedding(text: str) -> List[float]:
     try:
         if not client_manager.is_gemini_configured():
@@ -297,7 +356,9 @@ def get_anti_recommendations(current_item_description: str, style_preferences: O
 
 def get_actionable_suggestions(style_preferences: Optional[str] = None):
     try:
+        print(f"Generating suggestions for style preferences: {style_preferences}")
         user_profile = generate_user_profile(style_preferences, "General fashion recommendations")
+        print(f"Generated user profile: {user_profile}")
         
         queries = []
         
@@ -305,16 +366,36 @@ def get_actionable_suggestions(style_preferences: Optional[str] = None):
         colors = user_profile.get('color_preference', ['versatile'])
         occasions = user_profile.get('occasion_focus', ['everyday'])
         
-        queries.append(f"{style} {colors[0]} {occasions[0]} outfit")
+        base_query = f"{style} {colors[0]} {occasions[0]} outfit"
+        print(f"Base query: {base_query}")
+        queries.append(base_query)
+        
         if len(occasions) > 1:
             queries.append(f"{style} {occasions[1]} wear")
         if len(colors) > 1:
             queries.append(f"{colors[1]} {style} clothing")
         
+        print(f"Generated queries: {queries}")
+        
         all_items = []
         for query in queries[:2]:
-            items = search_fashion_items_in_qdrant(query, limit=4, user_profile=user_profile)
-            all_items.extend(items)
+            try:
+                items = search_fashion_items_in_qdrant(query, limit=4, user_profile=user_profile)
+                print(f"Found {len(items)} items for query: {query}")
+                all_items.extend(items)
+            except Exception as query_error:
+                print(f"Error searching for query '{query}': {query_error}")
+                continue
+        
+        if not all_items:
+            # Fallback to a simpler query if no items found
+            fallback_query = "versatile fashion clothing"
+            print(f"No items found, trying fallback query: {fallback_query}")
+            try:
+                items = search_fashion_items_in_qdrant(fallback_query, limit=8)
+                all_items.extend(items)
+            except Exception as fallback_error:
+                print(f"Fallback query failed: {fallback_error}")
         
         seen_ids = set()
         unique_items = []
@@ -322,6 +403,8 @@ def get_actionable_suggestions(style_preferences: Optional[str] = None):
             if item.id not in seen_ids:
                 unique_items.append(item)
                 seen_ids.add(item.id)
+        
+        print(f"Found {len(unique_items)} unique items")
         
         return {
             "suggestion_type": "personalized_recommendations",
@@ -490,8 +573,51 @@ def api_get_anti_recommendations(request: AntiRecommendationRequest):
 @app.get("/actionable-suggestions", summary="Get Personalized Fashion Suggestions")
 @app.post("/actionable-suggestions", summary="Get Personalized Fashion Suggestions")
 def api_get_actionable_suggestions(preferences: UserPreferencesRequest = None):
-    style_prefs = preferences.preferences if preferences else None
-    return get_actionable_suggestions(style_prefs)
+    try:
+        print("Received request for actionable suggestions")
+        print(f"Preferences object: {preferences}")
+        
+        style_prefs = preferences.preferences if preferences else None
+        print(f"Extracted style preferences: {style_prefs}")
+        
+        # Try a simple fallback suggestion if no preferences provided
+        if not style_prefs:
+            print("No preferences provided, using fallback suggestions")
+            try:
+                qdrant_client = client_manager.get_qdrant_client()
+                query_vector = get_gemini_embedding("versatile casual fashion items")
+                hits = qdrant_client.search(
+                    collection_name=QDRANT_COLLECTION_NAME,
+                    query_vector=query_vector,
+                    limit=8,
+                    with_payload=True
+                )
+                
+                items = []
+                for hit in hits:
+                    try:
+                        item = qdrant_payload_to_fashion_item(hit)
+                        items.append(item.dict())
+                    except Exception as e:
+                        print(f"Error converting item: {e}")
+                        continue
+                
+                return {
+                    "suggestion_type": "general_recommendations",
+                    "message": "Here are some versatile fashion suggestions:",
+                    "items": items
+                }
+            except Exception as e:
+                print(f"Fallback suggestion failed: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to get fallback suggestions: {str(e)}")
+        
+        result = get_actionable_suggestions(style_prefs)
+        print("Successfully generated suggestions")
+        return result
+        
+    except Exception as e:
+        print(f"Error in api_get_actionable_suggestions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get suggestions: {str(e)}")
 
 @app.post("/mixed-culture-recommendations", summary="Get Recommendations Blending Cultures")
 def api_get_mixed_culture_recommendations(request: CultureRequest):

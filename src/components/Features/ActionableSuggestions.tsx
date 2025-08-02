@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
-import { Lightbulb, MapPin, Star } from 'lucide-react';
-import { apiService, ApiError } from '../../services/api';
-import { FashionPlace } from '../../types';
-import { LoadingSpinner } from '../UI/LoadingSpinner';
-import { ErrorMessage } from '../UI/ErrorMessage';
-import { Card } from '../UI/Card';
+import React, { useState } from "react";
+import { Lightbulb, MapPin, Star } from "lucide-react";
+import { apiService, ApiError, FashionItemResponse } from "../../services/api";
+import { FashionPlace } from "../../types";
+import { LoadingSpinner } from "../UI/LoadingSpinner";
+import { ErrorMessage } from "../UI/ErrorMessage";
+import { Card } from "../UI/Card";
 
 export const ActionableSuggestions: React.FC = () => {
-  const [userId, setUserId] = useState('');
+  const [userId, setUserId] = useState("");
   const [suggestions, setSuggestions] = useState<FashionPlace[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,10 +20,26 @@ export const ActionableSuggestions: React.FC = () => {
     setError(null);
 
     try {
-      const response = await apiService.getActionableSuggestions(userId);
-      setSuggestions(response.suggestions);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to get suggestions');
+      const response = await apiService.getInspiration(userId);
+      if (!response || !Array.isArray(response.items)) {
+        throw new ApiError("Invalid response format");
+      }
+      setSuggestions(
+        response.items.map((item: FashionItemResponse) => ({
+          id: item.id,
+          name: item.clothing_type,
+          location: `${item.dominant_color} ${item.pattern_type || "style"}`,
+          rating: 4.5,
+          style_focus: item.occasion_suitability.join(", ") || "Casual",
+        }))
+      );
+    } catch (err: unknown) {
+      if (err instanceof ApiError || err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Failed to get suggestions");
+      }
+      setSuggestions([]);
     } finally {
       setLoading(false);
     }
@@ -33,13 +49,18 @@ export const ActionableSuggestions: React.FC = () => {
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-3xl font-bold text-gray-900 mb-2">Get Inspired</h2>
-        <p className="text-gray-600">Discover personalized fashion recommendations</p>
+        <p className="text-gray-600">
+          Discover personalized fashion recommendations
+        </p>
       </div>
 
       <Card className="max-w-md mx-auto">
         <form onSubmit={handleGetSuggestions} className="space-y-4">
           <div>
-            <label htmlFor="userId" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="userId"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               Your User ID
             </label>
             <input
@@ -71,7 +92,14 @@ export const ActionableSuggestions: React.FC = () => {
 
       {error && (
         <div className="max-w-2xl mx-auto">
-          <ErrorMessage message={error} onRetry={() => handleGetSuggestions({ preventDefault: () => {} } as React.FormEvent)} />
+          <ErrorMessage
+            message={error}
+            onRetry={() =>
+              handleGetSuggestions({
+                preventDefault: () => {},
+              } as React.FormEvent)
+            }
+          />
         </div>
       )}
 
@@ -87,7 +115,9 @@ export const ActionableSuggestions: React.FC = () => {
                 <p className="text-sm text-gray-600 mb-2">{place.location}</p>
                 <div className="flex items-center space-x-2 mb-2">
                   <Star className="w-4 h-4 text-yellow-500" />
-                  <span className="text-sm text-gray-600">{place.rating || 4.5}</span>
+                  <span className="text-sm text-gray-600">
+                    {place.rating || 4.5}
+                  </span>
                 </div>
                 <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
                   {place.style_focus}
