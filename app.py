@@ -12,6 +12,10 @@ from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 import google.generativeai as genai
 import random
+# ... other imports
+from qdrant_client.http import models as qdrant_models # Add this line
+
+# ...
 
 GEMINI_API_KEY = "AIzaSyCmgKxKEWO4uEI5tlQ6XdlNGtjj6SWFUjI"
 QLOO_API_KEY = "P47XJ-8yWaXrcxRkDu7XJPCeLXvNhGLGsMKcYLWTXkA"
@@ -119,6 +123,7 @@ class CultureRequest(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(..., example="red summer dress")
     style_preferences: Optional[str] = Field(None, example="I prefer elegant, formal styles")
+    filters: Optional[Dict[str, Any]] = Field(None, example={"dominant_color": "red", "clothing_type": "dress"})
 
 class AntiRecommendationRequest(BaseModel):
     current_item_description: str = Field(..., example="black formal suit")
@@ -276,7 +281,7 @@ def get_gemini_embedding(text: str) -> List[float]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini embedding failed: {e}")
 
-def search_fashion_items_in_qdrant(query: str, limit: int = 10, user_profile: Optional[dict] = None) -> List[FashionItem]:
+def search_fashion_items_in_qdrant(query: str, limit: int = 10, user_profile: Optional[dict] = None, filters: Optional[Dict[str, Any]] = None) -> List[FashionItem]:
     try:
         enhanced_query = query
         if user_profile:
@@ -286,10 +291,26 @@ def search_fashion_items_in_qdrant(query: str, limit: int = 10, user_profile: Op
         
         query_vector = get_gemini_embedding(enhanced_query)
         
+        # Build the metadata filter
+        qdrant_filter = None
+        if filters:
+            conditions = []
+            for key, value in filters.items():
+                if value:  # Only add filter if a value is provided
+                    conditions.append(
+                        qdrant_models.FieldCondition(
+                            key=key,
+                            match=qdrant_models.MatchValue(value=value)
+                        )
+                    )
+            if conditions:
+                qdrant_filter = qdrant_models.Filter(must=conditions)
+
         qdrant_client = client_manager.get_qdrant_client()
         hits = qdrant_client.search(
             collection_name=QDRANT_COLLECTION_NAME,
             query_vector=query_vector,
+            query_filter=qdrant_filter,  # Apply the filter here
             limit=limit,
             with_payload=True
         )
@@ -476,11 +497,13 @@ def find_fashion_twin(style_preferences: Optional[str] = None):
         raise HTTPException(status_code=500, detail=f"Fashion twin search failed: {e}")
 
 
-def search_fashion_items(query: str, style_preferences: Optional[str] = None):
+# Replace your old search_fashion_items function with this one
+
+def search_fashion_items(query: str, style_preferences: Optional[str] = None, filters: Optional[Dict[str, Any]] = None):
     try:
         user_profile = generate_user_profile(style_preferences, f"Searching for: {query}")
         
-        items = search_fashion_items_in_qdrant(query, limit=12, user_profile=user_profile)
+        items = search_fashion_items_in_qdrant(query, limit=12, user_profile=user_profile, filters=filters)
         
         return {
             "query": query,
@@ -492,6 +515,10 @@ def search_fashion_items(query: str, style_preferences: Optional[str] = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fashion search failed: {e}")
 
+
+@app.post("/search", summary="Search for Fashion Items with Natural Language")
+def api_search_fashion_items(request: SearchRequest):
+    return search_fashion_items(request.query, request.style_preferences, request.filters)
 
 def get_choice_approval(item_description: str, user_style: Optional[str] = None):
     try:
